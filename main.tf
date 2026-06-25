@@ -215,12 +215,12 @@ resource "coder_app" "auth_companion" {
   display_name = "Agent Auth"
   icon         = "/emojis/1f511.png"
 
-  url       = "http://localhost:43117"
+  url       = "http://127.0.0.1:43117"
   subdomain = true
   share     = "owner"
 
   healthcheck {
-    url       = "http://localhost:43117/healthz"
+    url       = "http://127.0.0.1:43117/healthz"
     interval  = 5
     threshold = 12
   }

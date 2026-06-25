@@ -187,9 +187,15 @@ hapi_process_running() {
 }
 
 start_auth_companion() {
-  if pgrep -u "$(id -u)" -f "${AUTHD_SCRIPT}" >/dev/null 2>&1; then
-    echo "Agent Auth Companion already running"
+  if curl -fsS "http://${AUTHD_HOST}:${AUTHD_PORT}/healthz" >/dev/null 2>&1; then
+    echo "Agent Auth Companion already running and healthy"
     return 0
+  fi
+
+  if pgrep -u "$(id -u)" -f "${AUTHD_SCRIPT}" >/dev/null 2>&1; then
+    echo "Agent Auth Companion process exists but health check failed; restarting"
+    pkill -u "$(id -u)" -f "${AUTHD_SCRIPT}" || true
+    sleep 1
   fi
 
   if [ ! -x "${AUTHD_SCRIPT}" ]; then
