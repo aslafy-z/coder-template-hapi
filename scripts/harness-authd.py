@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, os, pty, re, select, signal, shutil, subprocess, termios, threading, time, uuid
+import json, os, pty, re, select, signal, shutil, subprocess, tempfile, termios, threading, time, uuid
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
@@ -106,11 +106,60 @@ def statuses():
 
 COMMANDS={
  ('codex','device'): ['codex','login','--device-auth'], ('codex','browser'): ['codex','login'], ('codex','api_key'): ['bash','-lc','printf \"Paste OpenAI API key, then press Enter: \"; IFS= read -r key; printf \"%s\" \"$key\" | codex login --with-api-key'],
- ('claude','account'): ['claude'], ('opencode','connect'): ['opencode','auth','login'], ('opencode','interactive'): ['opencode'], ('github','device'): ['gh','auth','login','--web','--hostname','github.com','--git-protocol','https','--skip-ssh-key'],
+ ('claude','account'): ['claude'], ('opencode','openai_chatgpt'): ['opencode','auth','login','--provider','openai','--method','ChatGPT Plus/Pro'], ('opencode','connect'): ['opencode','auth','login'], ('opencode','interactive'): ['opencode'], ('github','device'): ['gh','auth','login','--web','--hostname','github.com','--git-protocol','https','--skip-ssh-key'],
  ('hapi','start'): ['bash','-lc','hapi hub --no-relay'],
 }
 
 INITIAL_STDIN={}
+
+BROWSER_HELPERS={
+    'xdg-open', 'open', 'sensible-browser', 'gnome-open', 'kde-open', 'wslview',
+    'x-www-browser', 'www-browser', 'firefox', 'google-chrome', 'chromium', 'chromium-browser'
+}
+
+def browser_bin_dir(sid):
+    return os.path.join(tempfile.gettempdir(), 'harness-authd-browser', sid)
+
+def install_browser_helpers(sid):
+    bindir=browser_bin_dir(sid)
+    os.makedirs(bindir, exist_ok=True)
+    helper=os.path.join(bindir, 'authd-browser-open')
+    script=f'''#!/usr/bin/env python3
+import json, sys
+from urllib.request import Request, urlopen
+url = next((a for a in sys.argv[1:] if a.startswith(('http://','https://'))), '')
+if url:
+    try:
+        data=json.dumps({{'url':url}}).encode()
+        req=Request('http://{HOST}:{PORT}/api/browser-opened/{sid}', data=data, headers={{'content-type':'application/json'}}, method='POST')
+        urlopen(req, timeout=2).read()
+    except Exception:
+        pass
+print(url or 'Browser open requested; no URL argument was provided.')
+'''
+    with open(helper, 'w') as f:
+        f.write(script)
+    os.chmod(helper, 0o755)
+    for name in BROWSER_HELPERS:
+        path=os.path.join(bindir, name)
+        try:
+            if os.path.lexists(path): os.unlink(path)
+            os.symlink(helper, path)
+        except OSError:
+            pass
+    return bindir, helper
+
+def remember_url(s, url):
+    if not url or not url.startswith(('http://','https://')):
+        return
+    url=url.rstrip('.,;:')
+    if urlparse(url).hostname in ('localhost','127.0.0.1','::1'):
+        return
+    if s.get('harness')=='opencode' and 'auth.openai.com/codex/device' in url:
+        return
+    ru=redact(url)
+    if ru and ru not in s['urls']:
+        s['urls'].append(ru)
 
 def resize_pty(fd, cols, rows):
     try:
@@ -135,11 +184,7 @@ def reader(sid, fd):
             if not s: break
             s['log']=(s.get('log','')+redact(data))[-20000:]
             for u in URL_RE.findall(clean):
-                parsed=urlparse(u)
-                if parsed.hostname in ('localhost','127.0.0.1','::1'):
-                    continue
-                ru=redact(u.rstrip('.,;:'))
-                if ru and ru not in s['urls']: s['urls'].append(ru)
+                remember_url(s, u)
             m=DEVICE_RE.search(clean)
             if m: s['device_code']=m.group(1)
             lm=LOOP_RE.search(clean)
@@ -159,10 +204,14 @@ def start_session(harness, method):
     argv=COMMANDS.get((harness,method))
     if not argv: raise ValueError('unsupported login method')
     if argv[0] != 'bash' and not exists(argv[0]): raise ValueError(f'{argv[0]} is not installed')
-    sid=str(uuid.uuid4())[:8]; pid, fd=pty.fork()
+    sid=str(uuid.uuid4())[:8]
+    bindir, browser_helper = install_browser_helpers(sid)
+    pid, fd=pty.fork()
     if pid==0:
         os.environ['TERM']='xterm-256color'
         os.environ.setdefault('NO_COLOR','1')
+        os.environ['BROWSER']=browser_helper
+        os.environ['PATH']=bindir+os.pathsep+os.environ.get('PATH','')
         os.chdir(PROJECT if os.path.isdir(PROJECT) else HOME)
         os.execvp(argv[0], argv)
     resize_pty(fd, 120, 28)
@@ -179,7 +228,7 @@ async function api(p,o={}){let r=await fetch(p,{headers:{'content-type':'applica
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function toast(msg){let t=document.getElementById('toast');t.textContent=msg;t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>t.hidden=true,3500)}
 function renderProjects(st){let ps=st.repo?.projects||[];projects.innerHTML=ps.length?ps.map(p=>`<div class=repo-row><code>${esc(p.name)}</code><small>${p.git?'git repo':'directory'}</small><button class=danger onclick="deleteProject('${esc(p.name)}')">Delete</button></div>`).join(''):'<small>No project subdirectories yet.</small>'}
-function loginButtons(){return [['codex','device','Codex device-code'],['codex','browser','Codex browser replay'],['codex','api_key','Codex API key'],['claude','account','Claude terminal'],['opencode','connect','OpenCode /connect'],['opencode','interactive','OpenCode interactive'],['github','device','GitHub device login']].map(x=>`<button onclick="start('${x[0]}','${x[1]}')">${x[2]}</button>`).join('')}
+function loginButtons(){return [['codex','device','Codex device-code'],['codex','browser','Codex browser replay'],['codex','api_key','Codex API key'],['claude','account','Claude terminal'],['opencode','openai_chatgpt','OpenCode OpenAI ChatGPT'],['opencode','connect','OpenCode /connect'],['opencode','interactive','OpenCode interactive'],['github','device','GitHub device login']].map(x=>`<button onclick="start('${x[0]}','${x[1]}')">${x[2]}</button>`).join('')}
 async function refreshStatus(){let st=await api('/api/status');renderProjects(st);status.innerHTML=Object.entries(st).map(([k,v])=>`<div class="card status"><b>${esc(k)}</b><br><span class=${v.ok?'ok':'bad'}>${v.ok?'OK':'not ready'}</span><br><small>${esc(v.detail||'')}</small></div>`).join('')}
 function needsReplay(s){return s.method==='browser'||s.state==='waiting_callback'}
 function sessionHtml(s){let replay=needsReplay(s), ph=s.method==='api_key'?'paste OpenAI API key, then Send stdin':(replay?'paste full callback URL after browser redirects':'type naturally in terminal, or paste code/answer here');return `<div class=card id="sess-${s.id}"><div class=session-head><div class=session-title><b>${esc(s.harness)}/${esc(s.method)}</b> <span class=pill>${esc(s.id)} · ${esc(s.state)}</span></div><button class=secondary onclick="toggleFold('${s.id}')">Fold</button></div><div class=urls>${(s.urls||[]).map(u=>`<a target=_blank rel=noopener href="${esc(u)}">${esc(u)}</a><br>`).join('')}</div>${s.device_code?`<p>Device code: <b class=kbd>${esc(s.device_code)}</b></p>`:''}<div class=actions><input id="in${s.id}" placeholder="${ph}" size=54><button onclick="${replay?'replay':'stdin'}('${s.id}')">${replay?'Replay callback':'Send stdin'}</button><button class=secondary onclick="sendRaw('${s.id}','\r')">Enter</button><button class=secondary onclick="sendRaw('${s.id}','yes\n')">Yes</button><button class=secondary onclick="sendRaw('${s.id}','1\r')">1</button><button class=secondary onclick="sendRaw('${s.id}','\u0003')">Ctrl-C</button><button class=danger onclick="cancel('${s.id}')">Cancel</button></div><div class=hint>Tip: click the terminal and type directly. Use Yes for GitHub prompts, 1/Enter for Claude theme screens, or paste a Codex callback URL above.</div><div class=term data-term="${esc(s.id)}"></div></div>`}
@@ -221,6 +270,14 @@ class H(BaseHTTPRequestHandler):
                 d=self.body(); self.sendj(clone_repo(d.get('repo',''), d.get('dest') or None)); return
             if parts[:2]==['api','harness'] and parts[3]=='login':
                 s=start_session(parts[2],parts[4]); self.sendj({k:v for k,v in s.items() if k != 'fd'}); return
+            if parts[:2]==['api','browser-opened']:
+                d=self.body()
+                with LOCK:
+                    s=SESS.get(parts[2])
+                    if not s: raise ValueError('session not found')
+                    remember_url(s, d.get('url',''))
+                    s['state']='browser_opened'
+                self.sendj({'ok':True}); return
             if parts[:2]==['api','sessions'] and parts[3]=='stdin':
                 d=self.body(); s=SESS[parts[2]]; os.write(s['fd'], d.get('text','').encode()); self.sendj({'ok':True}); return
             if parts[:2]==['api','sessions'] and parts[3]=='cancel':
