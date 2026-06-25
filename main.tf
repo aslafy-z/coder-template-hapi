@@ -208,6 +208,24 @@ resource "coder_script" "hapi" {
   start_blocks_login = false
 }
 
+resource "coder_app" "auth_companion" {
+  count        = data.coder_parameter.agent_harness.value == "none" ? 0 : 1
+  agent_id     = coder_agent.main.id
+  slug         = "auth"
+  display_name = "Agent Auth"
+  icon         = "/emojis/1f511.png"
+
+  url       = "http://localhost:43117"
+  subdomain = true
+  share     = "owner"
+
+  healthcheck {
+    url       = "http://localhost:43117/healthz"
+    interval  = 5
+    threshold = 12
+  }
+}
+
 resource "coder_app" "hapi" {
   count        = data.coder_parameter.agent_harness.value == "none" ? 0 : 1
   agent_id     = coder_agent.main.id
