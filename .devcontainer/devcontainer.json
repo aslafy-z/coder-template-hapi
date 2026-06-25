@@ -1,0 +1,17 @@
+{
+  "name": "Coder HAPI Workspace",
+  "image": "codercom/enterprise-base:ubuntu",
+  "remoteUser": "coder",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false,
+      "username": "coder",
+      "upgradePackages": false
+    }
+  },
+  "containerEnv": {
+    "PATH": "/home/coder/.local/bin:/home/coder/.local/share/mise/shims:${containerEnv:PATH}"
+  },
+  "onCreateCommand": "bash .devcontainer/install-mise.sh",
+  "postCreateCommand": "mkdir -p /home/coder/.config/coder-hapi /home/coder/.hapi /home/coder/.local/bin"
+}
