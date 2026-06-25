@@ -170,8 +170,14 @@ install_hapi_and_selected_harnesses() {
   verify_selected_binaries
 }
 
+hapi_process_running() {
+  local pattern="$1"
+
+  pgrep -u "$(id -u)" -x hapi -a 2>/dev/null | awk -v pattern="${pattern}" '$0 ~ pattern { found = 1 } END { exit !found }'
+}
+
 start_hapi_hub() {
-  if pgrep -u "$(id -u)" -f "hapi hub" >/dev/null 2>&1; then
+  if hapi_process_running 'hapi hub([[:space:]]|$)'; then
     echo "HAPI hub already running"
     return 0
   fi
@@ -196,7 +202,7 @@ start_hapi_hub() {
 }
 
 start_hapi_runner() {
-  if pgrep -u "$(id -u)" -f "hapi runner start.*--workspace-root ${PROJECT_DIR}" >/dev/null 2>&1; then
+  if hapi_process_running "hapi runner start.*--workspace-root ${PROJECT_DIR}([[:space:]]|$)"; then
     echo "HAPI runner already running for ${PROJECT_DIR}"
     return 0
   fi
