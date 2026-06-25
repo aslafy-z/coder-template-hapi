@@ -159,6 +159,15 @@ data "coder_parameter" "agent_harness" {
   }
 }
 
+data "coder_parameter" "hapi_cli_api_token" {
+  name         = "hapi_cli_api_token"
+  display_name = "HAPI CLI API token"
+  description  = "Shared secret for HAPI UI and CLI authentication. Defaults to token for easy mobile login; change it at runtime for a stronger per-workspace token."
+  type         = "string"
+  default      = "token"
+  mutable      = true
+  order        = 6
+}
 
 resource "coder_agent" "main" {
   os   = "linux"
@@ -309,6 +318,11 @@ resource "kubernetes_deployment_v1" "workspace" {
           env {
             name  = "AGENT_HARNESS"
             value = data.coder_parameter.agent_harness.value
+          }
+
+          env {
+            name  = "CLI_API_TOKEN"
+            value = data.coder_parameter.hapi_cli_api_token.value
           }
 
           env {
