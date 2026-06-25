@@ -62,3 +62,9 @@ No API keys or provider credentials are committed by this template. Users should
 - Some harnesses may require user login after install.
 - Tool installation depends strictly on the configured mise aliases; if a mise alias breaks, the selected harness fails until the alias or config is fixed.
 - The generated mise config is separate from the user's project `.mise.toml`.
+
+## Image release automation
+
+GitHub Actions publishes the workspace image to GitHub Container Registry as `ghcr.io/<owner>/<repo>`. The release workflow does not rely on conventional commit messages. Instead, every push to `main` bumps the latest `vMAJOR.MINOR.PATCH` tag by one patch version, commits the resulting `VERSION` file, creates an annotated release tag, and publishes Docker image tags for the semantic version, the `v`-prefixed tag, `latest`, and the short commit SHA.
+
+To choose a non-patch bump, run the **Release image** workflow manually and select `major`, `minor`, or `patch`.
