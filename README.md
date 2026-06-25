@@ -12,7 +12,7 @@ This template provisions a Kubernetes pod as a Coder workspace with a persistent
 
 ## Prerequisites
 
-You need an existing Kubernetes cluster and namespace for workspace resources. The namespace must exist before workspaces are created.
+You need an existing Kubernetes cluster and namespace for workspace resources. The namespace must exist before workspaces are created. The template defaults to the `coder-workspaces` namespace, but you can override it with the Terraform `namespace` variable.
 
 The Coder provisioner must be able to authenticate to the target cluster. If Coder runs inside the same cluster, use in-cluster ServiceAccount credentials. If Coder runs outside the cluster, enable kubeconfig authentication and provide a valid `~/.kube/config` on the Coder host.
 
