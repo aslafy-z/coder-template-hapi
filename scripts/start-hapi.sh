@@ -22,6 +22,10 @@ ensure_dirs() {
     "${HAPI_HOME}" \
     "${HOME}/.local/bin" \
     "${MISE_GLOBAL_CONFIG_DIR}"
+
+  if [ -d "${PROJECT_DIR}" ] && [ "$(id -u)" -ne 0 ] && [ ! -w "${PROJECT_DIR}" ] && command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo chown "$(id -u):$(id -g)" "${PROJECT_DIR}" || true
+  fi
 }
 
 ensure_mise() {
