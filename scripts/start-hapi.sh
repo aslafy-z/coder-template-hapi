@@ -186,16 +186,34 @@ hapi_process_running() {
   pgrep -u "$(id -u)" -x hapi -a 2>/dev/null | awk -v pattern="${pattern}" '$0 ~ pattern { found = 1 } END { exit !found }'
 }
 
+auth_companion_pids() {
+  ps -u "$(id -u)" -o pid= -o args= \
+    | awk -v self="$$" -v script="${AUTHD_SCRIPT}" '
+        $1 != self &&
+        index($0, script) &&
+        $0 ~ /(^|[[:space:]])python[0-9.]*([[:space:]]|$)/ {
+          print $1
+        }'
+}
+
 start_auth_companion() {
   if curl -fsS "http://${AUTHD_HOST}:${AUTHD_PORT}/healthz" >/dev/null 2>&1; then
     echo "Agent Auth Companion already running and healthy"
     return 0
   fi
 
-  if pgrep -u "$(id -u)" -f "${AUTHD_SCRIPT}" >/dev/null 2>&1; then
+  local pids
+  pids="$(auth_companion_pids || true)"
+
+  if [ -n "${pids}" ]; then
     echo "Agent Auth Companion process exists but health check failed; restarting"
-    pkill -u "$(id -u)" -f "${AUTHD_SCRIPT}" || true
+    printf '%s\n' "${pids}" | xargs -r kill || true
     sleep 1
+
+    pids="$(auth_companion_pids || true)"
+    if [ -n "${pids}" ]; then
+      printf '%s\n' "${pids}" | xargs -r kill -9 || true
+    fi
   fi
 
   if [ ! -x "${AUTHD_SCRIPT}" ]; then
@@ -205,12 +223,20 @@ start_auth_companion() {
 
   echo "Starting Agent Auth Companion on ${AUTHD_HOST}:${AUTHD_PORT}"
   nohup "${AUTHD_SCRIPT}" >"${HAPI_HOME}/authd.log" 2>&1 &
+  local authd_pid="$!"
 
   for _ in $(seq 1 30); do
     if curl -fsS "http://${AUTHD_HOST}:${AUTHD_PORT}/healthz" >/dev/null 2>&1; then
       echo "Agent Auth Companion is ready"
       return 0
     fi
+
+    if ! kill -0 "${authd_pid}" >/dev/null 2>&1; then
+      echo "Agent Auth Companion exited before becoming ready" >&2
+      tail -n 100 "${HAPI_HOME}/authd.log" >&2 || true
+      return 1
+    fi
+
     sleep 1
   done
 
