@@ -3,7 +3,7 @@ set -euo pipefail
 
 AGENT_HARNESS="${AGENT_HARNESS:-hapi-only}"
 HOME="${HOME:-/home/coder}"
-PROJECT_DIR="${PROJECT_DIR:-/workspaces}"
+PROJECT_DIR="${PROJECT_DIR:-${HOME}/project}"
 HAPI_HOME="${HAPI_HOME:-${HOME}/.hapi}"
 CODER_HAPI_CONFIG_DIR="${CODER_HAPI_CONFIG_DIR:-${HOME}/.config/coder-hapi}"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${CODER_HAPI_CONFIG_DIR}/mise.toml}"
