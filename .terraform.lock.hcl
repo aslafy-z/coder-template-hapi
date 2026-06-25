@@ -2,7 +2,8 @@
 # Manual edits may be lost in future updates.
 
 provider "registry.terraform.io/coder/coder" {
-  version = "2.18.0"
+  version     = "2.18.0"
+  constraints = ">= 2.4.0"
   hashes = [
     "h1:O25nA2tkM1JFJtQpaX2TOTeWvsSyuxDoJo6/QTv78hM=",
     "zh:107c4eb7a36335ac94637679845c040759e21d3fb108d07081e0689cb93121b1",
@@ -22,19 +23,9 @@ provider "registry.terraform.io/coder/coder" {
   ]
 }
 
-provider "registry.terraform.io/coder/envbuilder" {
-  version = "1.0.0"
-  hashes = [
-    "h1:EijMsTkZ+GM+0gSaTR2Rw9FO9vJE7i6w3U5/Z76zBsQ=",
-    "zh:638f85855a86dd9f783ac667d302a2fe072ff6570e866dabed8082d74a246c09",
-    "zh:8316dd29b5015d178cb6f8ecd4b10e4df766a82496d06883ba4c91ef410ce719",
-    "zh:890df766e9b839623b1f0437355032a3c006226a6c200cd911e15ee1a9014e9f",
-    "zh:d91bc816e66c01ef552b04413bd0d83f35a217eb578148da31ba54c0fe0aca31",
-  ]
-}
-
 provider "registry.terraform.io/hashicorp/kubernetes" {
-  version = "3.2.0"
+  version     = "3.2.0"
+  constraints = ">= 2.23.0"
   hashes = [
     "h1:OjMar8kVp0LcDtwgRs877g/K/KPAEDVhFewpE3Tp7l8=",
     "zh:2e33acc20154d96ce5b3ab6d5fa0407403759a0852c63276baed0bbef4dbf1d4",
