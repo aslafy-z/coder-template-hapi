@@ -1,10 +1,12 @@
 terraform {
   required_providers {
     coder = {
-      source = "coder/coder"
+      source  = "coder/coder"
+      version = ">= 2.4.0"
     }
     kubernetes = {
-      source = "hashicorp/kubernetes"
+      source  = "hashicorp/kubernetes"
+      version = ">= 2.23.0"
     }
   }
 }
@@ -31,8 +33,7 @@ variable "namespace" {
 }
 
 provider "kubernetes" {
-  # Authenticate via ~/.kube/config or a Coder-specific ServiceAccount, depending on admin preferences.
-  config_path = var.use_kubeconfig == true ? "~/.kube/config" : null
+  config_path = var.use_kubeconfig ? "~/.kube/config" : null
 }
 
 data "coder_provisioner" "me" {}
@@ -49,6 +50,22 @@ data "coder_parameter" "workspace_image" {
   order        = 1
 }
 
+locals {
+  cpu_options = {
+    "2 Cores" = "2"
+    "4 Cores" = "4"
+    "6 Cores" = "6"
+    "8 Cores" = "8"
+  }
+
+  memory_options = {
+    "2 GB" = "2"
+    "4 GB" = "4"
+    "6 GB" = "6"
+    "8 GB" = "8"
+  }
+}
+
 data "coder_parameter" "cpu" {
   name         = "cpu"
   display_name = "CPU"
@@ -57,21 +74,14 @@ data "coder_parameter" "cpu" {
   icon         = "/icon/memory.svg"
   mutable      = true
   order        = 2
-  option {
-    name  = "2 Cores"
-    value = "2"
-  }
-  option {
-    name  = "4 Cores"
-    value = "4"
-  }
-  option {
-    name  = "6 Cores"
-    value = "6"
-  }
-  option {
-    name  = "8 Cores"
-    value = "8"
+  form_type    = "radio"
+
+  dynamic "option" {
+    for_each = local.cpu_options
+    content {
+      name  = option.key
+      value = option.value
+    }
   }
 }
 
@@ -83,21 +93,14 @@ data "coder_parameter" "memory" {
   icon         = "/icon/memory.svg"
   mutable      = true
   order        = 3
-  option {
-    name  = "2 GB"
-    value = "2"
-  }
-  option {
-    name  = "4 GB"
-    value = "4"
-  }
-  option {
-    name  = "6 GB"
-    value = "6"
-  }
-  option {
-    name  = "8 GB"
-    value = "8"
+  form_type    = "radio"
+
+  dynamic "option" {
+    for_each = local.memory_options
+    content {
+      name  = option.key
+      value = option.value
+    }
   }
 }
 
@@ -110,6 +113,8 @@ data "coder_parameter" "home_disk_size" {
   icon         = "/emojis/1f4be.png"
   mutable      = false
   order        = 4
+  form_type    = "slider"
+
   validation {
     min = 1
     max = 99999
@@ -122,6 +127,7 @@ data "coder_parameter" "agent_harness" {
   description  = "Choose which AI agent harness to install when the workspace starts."
   default      = "hapi-only"
   order        = 5
+  form_type    = "dropdown"
 
   option {
     name  = "None"
@@ -172,7 +178,6 @@ data "coder_parameter" "hapi_cli_api_token" {
 resource "coder_agent" "main" {
   os   = "linux"
   arch = data.coder_provisioner.me.arch
-  dir  = "/home/coder/project"
 
   metadata {
     display_name = "CPU Usage"
