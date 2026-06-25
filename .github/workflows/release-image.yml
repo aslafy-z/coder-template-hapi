@@ -52,6 +52,7 @@ jobs:
         shell: bash
         env:
           BUMP: ${{ github.event.inputs.bump || 'patch' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
