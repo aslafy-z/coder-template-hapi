@@ -46,7 +46,7 @@ data "coder_parameter" "workspace_image" {
   description  = "Pre-built workspace image to run for this template. Release automation updates this default before tagging."
   type         = "string"
   mutable      = true
-  default      = "ghcr.io/aslafy-z/coder-template-hapi:v0.0.10"
+  default      = "ghcr.io/aslafy-z/coder-template-hapi:v0.0.9"
   order        = 1
 }
 
