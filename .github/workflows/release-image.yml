@@ -165,6 +165,25 @@ jobs:
           ref: ${{ steps.release.outputs.tag }}
           fetch-depth: 0
 
+      - name: Publish repository archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          asset_name="${GITHUB_REPOSITORY##*/}-${RELEASE_TAG}.zip"
+          git archive --format=zip --output "${asset_name}" HEAD
+
+          if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" \
+              --title "${RELEASE_TAG}" \
+              --notes "Workspace image release ${RELEASE_TAG}."
+          fi
+
+          gh release upload "${RELEASE_TAG}" "${asset_name}" --clobber
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
