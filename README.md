@@ -38,6 +38,16 @@ Workspace creation shows an **Agent harness** selector named `agent_harness`:
 
 Every mode except `none` includes Node 22 and HAPI (`npm:@twsxtd/hapi`) in the managed mise config.
 
+## HAPI token parameter
+
+Workspace creation includes a mutable **HAPI CLI API token** parameter named `hapi_cli_api_token`. It defaults to `token`, which matches the HAPI UI login token you can enter from a browser or mobile app. Change this parameter at runtime if you want a stronger per-workspace token.
+
+The template passes the value to HAPI as `CLI_API_TOKEN`, so it overrides HAPI's first-run generated token behavior and is used by the hub and CLI/runner processes. The startup log prints the configured token line as:
+
+```text
+HAPI CLI_API_TOKEN: token
+```
+
 ## Runtime layout
 
 - Project root: `/home/coder/project`
@@ -49,8 +59,8 @@ Every mode except `none` includes Node 22 and HAPI (`npm:@twsxtd/hapi`) in the m
 The startup script starts:
 
 ```text
-hapi hub --no-relay
-hapi runner start --workspace-root /home/coder/project
+CLI_API_TOKEN=token hapi hub --no-relay
+CLI_API_TOKEN=token hapi runner start --workspace-root /home/coder/project
 ```
 
 It checks for existing matching processes before starting HAPI, so workspace restarts do not create duplicate hub or runner processes.
@@ -61,7 +71,7 @@ After the workspace starts with any harness mode except `none`, open the **HAPI*
 
 ## Credentials
 
-No API keys or provider credentials are committed by this template. Users should authenticate through each tool's normal login flow or provide per-user/per-workspace environment variables or mounted secrets. HAPI state and any local auth material should remain under `/home/coder/.hapi` or in user-provided secret mounts.
+No provider credentials are committed by this template. The HAPI shared secret defaults to `token` for convenience and can be changed with the mutable `hapi_cli_api_token` parameter. Users should authenticate through each tool's normal login flow or provide per-user/per-workspace environment variables or mounted secrets. HAPI state and any local auth material should remain under `/home/coder/.hapi` or in user-provided secret mounts.
 
 ## Known limitations
 

@@ -9,8 +9,9 @@ CODER_HAPI_CONFIG_DIR="${CODER_HAPI_CONFIG_DIR:-${HOME}/.config/coder-hapi}"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${CODER_HAPI_CONFIG_DIR}/mise.toml}"
 HAPI_HOST="${HAPI_HOST:-127.0.0.1}"
 HAPI_PORT="${HAPI_PORT:-3006}"
+CLI_API_TOKEN="${CLI_API_TOKEN:-token}"
 
-export HOME HAPI_HOME MISE_CONFIG_FILE
+export HOME HAPI_HOME MISE_CONFIG_FILE CLI_API_TOKEN
 export MISE_IGNORED_CONFIG_PATHS="${HOME}/.config/mise/config.toml"
 
 ensure_dirs() {
@@ -183,6 +184,7 @@ start_hapi_hub() {
   fi
 
   echo "Starting HAPI hub on ${HAPI_HOST}:${HAPI_PORT}"
+  echo "HAPI CLI_API_TOKEN: ${CLI_API_TOKEN}"
 
   nohup hapi hub --no-relay \
     >"${HAPI_HOME}/hub.log" \
