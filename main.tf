@@ -126,7 +126,7 @@ data "coder_parameter" "agent_harness" {
   name         = "agent_harness"
   display_name = "Agent harness"
   description  = "Choose which AI agent harness to install when the workspace starts."
-  default      = "hapi-only"
+  default      = "all"
   order        = 5
   form_type    = "dropdown"
 
