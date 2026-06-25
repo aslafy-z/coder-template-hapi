@@ -6,73 +6,114 @@ terraform {
     kubernetes = {
       source = "hashicorp/kubernetes"
     }
-    envbuilder = {
-      source = "coder/envbuilder"
-    }
   }
 }
 
 provider "coder" {}
-provider "kubernetes" {}
-provider "envbuilder" {}
+
+variable "use_kubeconfig" {
+  type        = bool
+  description = <<-EOF
+  Use host kubeconfig? (true/false)
+
+  Set this to false if the Coder host is itself running as a Pod on the same
+  Kubernetes cluster as you are deploying workspaces to.
+
+  Set this to true if the Coder host is running outside the Kubernetes cluster
+  for workspaces. A valid "~/.kube/config" must be present on the Coder host.
+  EOF
+  default     = false
+}
+
+variable "namespace" {
+  type        = string
+  description = "The Kubernetes namespace to create workspaces in (must exist prior to creating workspaces). If the Coder host is itself running as a Pod on the same Kubernetes cluster as you are deploying workspaces to, set this to the same namespace."
+}
+
+provider "kubernetes" {
+  # Authenticate via ~/.kube/config or a Coder-specific ServiceAccount, depending on admin preferences.
+  config_path = var.use_kubeconfig == true ? "~/.kube/config" : null
+}
 
 data "coder_provisioner" "me" {}
 data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
-variable "namespace" {
-  type        = string
-  description = "Kubernetes namespace for workspace resources."
-  default     = "coder"
-}
-
-variable "cache_repo" {
-  type        = string
-  description = "Optional container registry repository for Envbuilder cache images. Leave empty to build directly with Envbuilder."
-  default     = ""
-}
-
-variable "insecure_cache_repo" {
-  type        = bool
-  description = "Allow HTTP when using cache_repo."
-  default     = false
-}
-
-variable "cache_repo_secret_name" {
-  type        = string
-  description = "Optional Kubernetes dockerconfigjson Secret name with credentials for cache_repo."
-  default     = ""
-  sensitive   = true
-}
-
-data "coder_parameter" "repo" {
-  name         = "repo"
-  display_name = "Repository URL"
-  description  = "Git repository containing .devcontainer/devcontainer.json."
+data "coder_parameter" "workspace_image" {
+  name         = "workspace_image"
+  display_name = "Workspace image"
+  description  = "Pre-built workspace image to run for this template. Release automation updates this default before tagging."
   type         = "string"
   mutable      = true
-  default      = "https://github.com/coder/coder-template-hapi"
+  default      = "ghcr.io/coder/coder-template-hapi:v0.0.1"
   order        = 1
 }
 
-data "coder_parameter" "devcontainer_builder" {
-  name         = "devcontainer_builder"
-  display_name = "Devcontainer builder"
-  description  = "Envbuilder image used to build and run the dev container. Pin this in production instead of using latest."
-  type         = "string"
+data "coder_parameter" "cpu" {
+  name         = "cpu"
+  display_name = "CPU"
+  description  = "The number of CPU cores"
+  default      = "2"
+  icon         = "/icon/memory.svg"
   mutable      = true
-  default      = "ghcr.io/coder/envbuilder:latest"
   order        = 2
+  option {
+    name  = "2 Cores"
+    value = "2"
+  }
+  option {
+    name  = "4 Cores"
+    value = "4"
+  }
+  option {
+    name  = "6 Cores"
+    value = "6"
+  }
+  option {
+    name  = "8 Cores"
+    value = "8"
+  }
 }
 
-data "coder_parameter" "fallback_image" {
-  name         = "fallback_image"
-  display_name = "Fallback image"
-  description  = "Image Envbuilder runs if the dev container build fails."
-  type         = "string"
+data "coder_parameter" "memory" {
+  name         = "memory"
+  display_name = "Memory"
+  description  = "The amount of memory in GB"
+  default      = "2"
+  icon         = "/icon/memory.svg"
   mutable      = true
-  default      = "codercom/enterprise-base:ubuntu"
   order        = 3
+  option {
+    name  = "2 GB"
+    value = "2"
+  }
+  option {
+    name  = "4 GB"
+    value = "4"
+  }
+  option {
+    name  = "6 GB"
+    value = "6"
+  }
+  option {
+    name  = "8 GB"
+    value = "8"
+  }
+}
+
+data "coder_parameter" "home_disk_size" {
+  name         = "home_disk_size"
+  display_name = "Home disk size"
+  description  = "The size of the home disk in GB"
+  default      = "10"
+  type         = "number"
+  icon         = "/emojis/1f4be.png"
+  mutable      = false
+  order        = 4
+  validation {
+    min = 1
+    max = 99999
+  }
 }
 
 data "coder_parameter" "agent_harness" {
@@ -80,7 +121,7 @@ data "coder_parameter" "agent_harness" {
   display_name = "Agent harness"
   description  = "Choose which AI agent harness to install when the workspace starts."
   default      = "hapi-only"
-  order        = 4
+  order        = 5
 
   option {
     name  = "None"
@@ -118,47 +159,34 @@ data "coder_parameter" "agent_harness" {
   }
 }
 
-data "kubernetes_secret_v1" "cache_repo_dockerconfig_secret" {
-  count = var.cache_repo_secret_name == "" ? 0 : 1
-
-  metadata {
-    name      = var.cache_repo_secret_name
-    namespace = var.namespace
-  }
-}
-
-locals {
-  deployment_name            = "coder-${data.coder_workspace_owner.me.name}-${data.coder_workspace.me.name}"
-  devcontainer_builder_image = data.coder_parameter.devcontainer_builder.value
-  repo_url                   = data.coder_parameter.repo.value
-  workspace_dir              = "/workspaces"
-
-  envbuilder_env = {
-    CODER_AGENT_TOKEN               = coder_agent.main.token
-    CODER_AGENT_URL                 = replace(data.coder_workspace.me.access_url, "/localhost|127\\.0\\.0\\.1/", "host.docker.internal")
-    ENVBUILDER_GIT_URL              = var.cache_repo == "" ? local.repo_url : ""
-    ENVBUILDER_INIT_SCRIPT          = replace(coder_agent.main.init_script, "/localhost|127\\.0\\.0\\.1/", "host.docker.internal")
-    ENVBUILDER_FALLBACK_IMAGE       = data.coder_parameter.fallback_image.value
-    ENVBUILDER_DOCKER_CONFIG_BASE64 = base64encode(try(data.kubernetes_secret_v1.cache_repo_dockerconfig_secret[0].data[".dockerconfigjson"], ""))
-    ENVBUILDER_PUSH_IMAGE           = var.cache_repo == "" ? "" : "true"
-    AGENT_HARNESS                   = data.coder_parameter.agent_harness.value
-    PROJECT_DIR                     = local.workspace_dir
-  }
-}
-
-resource "envbuilder_cached_image" "cached" {
-  count         = var.cache_repo == "" ? 0 : data.coder_workspace.me.start_count
-  builder_image = local.devcontainer_builder_image
-  git_url       = local.repo_url
-  cache_repo    = var.cache_repo
-  extra_env     = local.envbuilder_env
-  insecure      = var.insecure_cache_repo
-}
 
 resource "coder_agent" "main" {
   os   = "linux"
   arch = data.coder_provisioner.me.arch
-  dir  = local.workspace_dir
+
+  metadata {
+    display_name = "CPU Usage"
+    key          = "0_cpu_usage"
+    script       = "coder stat cpu"
+    interval     = 10
+    timeout      = 1
+  }
+
+  metadata {
+    display_name = "RAM Usage"
+    key          = "1_ram_usage"
+    script       = "coder stat mem"
+    interval     = 10
+    timeout      = 1
+  }
+
+  metadata {
+    display_name = "Home Disk"
+    key          = "3_home_disk"
+    script       = "coder stat disk --path $${HOME}"
+    interval     = 60
+    timeout      = 1
+  }
 }
 
 resource "coder_script" "hapi" {
@@ -188,111 +216,150 @@ resource "coder_app" "hapi" {
   }
 }
 
-resource "kubernetes_persistent_volume_claim_v1" "workspaces" {
+locals {
+  workspace_labels = {
+    "app.kubernetes.io/name"     = "coder-workspace"
+    "app.kubernetes.io/instance" = "coder-workspace-${data.coder_workspace.me.id}"
+    "app.kubernetes.io/part-of"  = "coder"
+    "com.coder.resource"         = "true"
+    "com.coder.workspace.id"     = data.coder_workspace.me.id
+    "com.coder.workspace.name"   = data.coder_workspace.me.name
+    "com.coder.user.id"          = data.coder_workspace_owner.me.id
+    "com.coder.user.username"    = data.coder_workspace_owner.me.name
+  }
+}
+
+resource "kubernetes_persistent_volume_claim_v1" "home" {
   metadata {
-    name      = "coder-${data.coder_workspace_owner.me.name}-${data.coder_workspace.me.name}-workspaces"
+    name      = "coder-${data.coder_workspace.me.id}-home"
     namespace = var.namespace
-    labels = {
-      "app.kubernetes.io/name"     = "coder-workspace"
-      "app.kubernetes.io/instance" = data.coder_workspace.me.id
+    labels = merge(local.workspace_labels, {
+      "app.kubernetes.io/name"     = "coder-pvc"
+      "app.kubernetes.io/instance" = "coder-pvc-${data.coder_workspace.me.id}"
+    })
+    annotations = {
+      "com.coder.user.email" = data.coder_workspace_owner.me.email
     }
   }
-
   wait_until_bound = false
 
   spec {
     access_modes = ["ReadWriteOnce"]
     resources {
       requests = {
-        storage = "10Gi"
+        storage = "${data.coder_parameter.home_disk_size.value}Gi"
       }
     }
   }
 }
 
 resource "kubernetes_deployment_v1" "workspace" {
-  count            = data.coder_workspace.me.start_count
+  count = data.coder_workspace.me.start_count
+  depends_on = [
+    kubernetes_persistent_volume_claim_v1.home,
+  ]
   wait_for_rollout = false
 
   metadata {
-    name      = local.deployment_name
+    name      = "coder-${data.coder_workspace.me.id}"
     namespace = var.namespace
-    labels = {
-      "app.kubernetes.io/name"     = "coder-workspace"
-      "app.kubernetes.io/instance" = data.coder_workspace.me.id
+    labels    = local.workspace_labels
+    annotations = {
+      "com.coder.user.email" = data.coder_workspace_owner.me.email
     }
   }
 
   spec {
     replicas = 1
     selector {
-      match_labels = {
-        "app.kubernetes.io/name"     = "coder-workspace"
-        "app.kubernetes.io/instance" = data.coder_workspace.me.id
-      }
+      match_labels = local.workspace_labels
     }
-
     strategy {
       type = "Recreate"
     }
 
     template {
       metadata {
-        labels = {
-          "app.kubernetes.io/name"     = "coder-workspace"
-          "app.kubernetes.io/instance" = data.coder_workspace.me.id
-        }
+        labels = local.workspace_labels
       }
 
       spec {
+        security_context {
+          run_as_user     = 1000
+          fs_group        = 1000
+          run_as_non_root = true
+        }
+
         container {
           name              = "dev"
-          image             = var.cache_repo == "" ? local.devcontainer_builder_image : envbuilder_cached_image.cached[0].image
-          image_pull_policy = "Always"
+          image             = data.coder_parameter.workspace_image.value
+          image_pull_policy = "IfNotPresent"
+          command           = ["sh", "-c", coder_agent.main.init_script]
 
-          dynamic "env" {
-            for_each = nonsensitive(var.cache_repo == "" ? local.envbuilder_env : envbuilder_cached_image.cached[0].env_map)
-            content {
-              name  = env.key
-              value = env.value
+          security_context {
+            run_as_user = "1000"
+          }
+
+          env {
+            name  = "CODER_AGENT_TOKEN"
+            value = coder_agent.main.token
+          }
+
+          env {
+            name  = "AGENT_HARNESS"
+            value = data.coder_parameter.agent_harness.value
+          }
+
+          env {
+            name  = "PATH"
+            value = "/home/coder/.local/bin:/home/coder/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          }
+
+          resources {
+            requests = {
+              "cpu"    = "250m"
+              "memory" = "512Mi"
+            }
+            limits = {
+              "cpu"    = data.coder_parameter.cpu.value
+              "memory" = "${data.coder_parameter.memory.value}Gi"
             }
           }
 
           volume_mount {
-            mount_path = local.workspace_dir
-            name       = "workspaces"
+            mount_path = "/home/coder"
+            name       = "home"
             read_only  = false
           }
         }
 
         volume {
-          name = "workspaces"
+          name = "home"
           persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim_v1.workspaces.metadata[0].name
+            claim_name = kubernetes_persistent_volume_claim_v1.home.metadata[0].name
             read_only  = false
+          }
+        }
+
+        affinity {
+          # This affinity attempts to spread out all workspace pods evenly across nodes.
+          pod_anti_affinity {
+            preferred_during_scheduling_ignored_during_execution {
+              weight = 1
+              pod_affinity_term {
+                topology_key = "kubernetes.io/hostname"
+                label_selector {
+                  match_expressions {
+                    key      = "app.kubernetes.io/name"
+                    operator = "In"
+                    values   = ["coder-workspace"]
+                  }
+                }
+              }
+            }
           }
         }
       }
     }
-  }
-}
-
-resource "coder_metadata" "devcontainer" {
-  count       = data.coder_workspace.me.start_count
-  resource_id = coder_agent.main.id
-
-  item {
-    key   = "repository"
-    value = local.repo_url
-  }
-
-  item {
-    key   = "builder image"
-    value = local.devcontainer_builder_image
-  }
-
-  item {
-    key   = "cache repo"
-    value = var.cache_repo == "" ? "not enabled" : var.cache_repo
   }
 }
