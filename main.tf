@@ -238,12 +238,12 @@ resource "coder_app" "hapi" {
   display_name = "HAPI"
   icon         = "/icon/terminal.svg"
 
-  url       = "http://localhost:3006"
+  url       = "http://127.0.0.1:3006"
   subdomain = true
   share     = "owner"
 
   healthcheck {
-    url       = "http://localhost:3006"
+    url       = "http://127.0.0.1:3006"
     interval  = 5
     threshold = 12
   }
