@@ -21,7 +21,9 @@ on:
           - major
 
 permissions:
+  # Required to push the version commit/tag and create the GitHub release.
   contents: write
+  # Required to publish the image to GitHub Container Registry.
   packages: write
 
 concurrency:
