@@ -5,21 +5,23 @@ AGENT_HARNESS="${AGENT_HARNESS:-hapi-only}"
 HOME="${HOME:-/home/coder}"
 PROJECT_DIR="${PROJECT_DIR:-${HOME}/project}"
 HAPI_HOME="${HAPI_HOME:-${HOME}/.hapi}"
-CODER_HAPI_CONFIG_DIR="${CODER_HAPI_CONFIG_DIR:-${HOME}/.config/coder-hapi}"
-MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${CODER_HAPI_CONFIG_DIR}/mise.toml}"
+MISE_GLOBAL_CONFIG_DIR="${MISE_GLOBAL_CONFIG_DIR:-${HOME}/.config/mise}"
+MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${MISE_GLOBAL_CONFIG_DIR}/config.toml}"
 HAPI_HOST="${HAPI_HOST:-127.0.0.1}"
 HAPI_PORT="${HAPI_PORT:-3006}"
+AUTHD_HOST="${AUTHD_HOST:-127.0.0.1}"
+AUTHD_PORT="${AUTHD_PORT:-43117}"
+AUTHD_SCRIPT="${AUTHD_SCRIPT:-/opt/coder-hapi/scripts/harness-authd.py}"
 CLI_API_TOKEN="${CLI_API_TOKEN:-token}"
 
-export HOME HAPI_HOME MISE_CONFIG_FILE CLI_API_TOKEN
-export MISE_IGNORED_CONFIG_PATHS="${HOME}/.config/mise/config.toml"
+export HOME PROJECT_DIR HAPI_HOME MISE_CONFIG_FILE CLI_API_TOKEN AUTHD_HOST AUTHD_PORT
 
 ensure_dirs() {
   mkdir -p \
     "${PROJECT_DIR}" \
     "${HAPI_HOME}" \
     "${HOME}/.local/bin" \
-    "${CODER_HAPI_CONFIG_DIR}"
+    "${MISE_GLOBAL_CONFIG_DIR}"
 }
 
 ensure_mise() {
@@ -44,6 +46,7 @@ write_mise_config() {
 [tools]
 node = "22"
 "npm:@twsxtd/hapi" = "latest"
+gh = "latest"
 CONFIG
       ;;
     code)
@@ -51,6 +54,7 @@ CONFIG
 [tools]
 node = "22"
 "npm:@twsxtd/hapi" = "latest"
+gh = "latest"
 claude-code = "latest"
 CONFIG
       ;;
@@ -59,6 +63,7 @@ CONFIG
 [tools]
 node = "22"
 "npm:@twsxtd/hapi" = "latest"
+gh = "latest"
 antigravity-cli = "latest"
 CONFIG
       ;;
@@ -67,6 +72,7 @@ CONFIG
 [tools]
 node = "22"
 "npm:@twsxtd/hapi" = "latest"
+gh = "latest"
 codex = "latest"
 CONFIG
       ;;
@@ -75,6 +81,7 @@ CONFIG
 [tools]
 node = "22"
 "npm:@twsxtd/hapi" = "latest"
+gh = "latest"
 opencode = "latest"
 CONFIG
       ;;
@@ -83,6 +90,7 @@ CONFIG
 [tools]
 node = "22"
 "npm:@twsxtd/hapi" = "latest"
+gh = "latest"
 claude-code = "latest"
 antigravity-cli = "latest"
 codex = "latest"
@@ -100,9 +108,9 @@ CONFIG
 }
 
 mise_install_tools() {
-  echo "Installing tools from ${MISE_CONFIG_FILE}"
+  echo "Installing tools from global mise config ${MISE_CONFIG_FILE}"
 
-  if ! mise install -C "${CODER_HAPI_CONFIG_DIR}"; then
+  if ! mise install; then
     echo "mise install failed for AGENT_HARNESS=${AGENT_HARNESS}" >&2
     echo "Config used:" >&2
     cat "${MISE_CONFIG_FILE}" >&2
@@ -110,7 +118,7 @@ mise_install_tools() {
   fi
 
   mise reshim || true
-  eval "$(mise env -C "${CODER_HAPI_CONFIG_DIR}" -s bash)"
+  eval "$(mise env -s bash)"
 }
 
 verify_binary() {
@@ -132,6 +140,7 @@ verify_binary() {
 
 verify_selected_binaries() {
   verify_binary hapi
+  verify_binary gh
 
   case "${AGENT_HARNESS}" in
     hapi-only)
@@ -175,6 +184,33 @@ hapi_process_running() {
   local pattern="$1"
 
   pgrep -u "$(id -u)" -x hapi -a 2>/dev/null | awk -v pattern="${pattern}" '$0 ~ pattern { found = 1 } END { exit !found }'
+}
+
+start_auth_companion() {
+  if pgrep -u "$(id -u)" -f "${AUTHD_SCRIPT}" >/dev/null 2>&1; then
+    echo "Agent Auth Companion already running"
+    return 0
+  fi
+
+  if [ ! -x "${AUTHD_SCRIPT}" ]; then
+    echo "Agent Auth Companion script is missing or not executable: ${AUTHD_SCRIPT}" >&2
+    return 1
+  fi
+
+  echo "Starting Agent Auth Companion on ${AUTHD_HOST}:${AUTHD_PORT}"
+  nohup "${AUTHD_SCRIPT}" >"${HAPI_HOME}/authd.log" 2>&1 &
+
+  for _ in $(seq 1 30); do
+    if curl -fsS "http://${AUTHD_HOST}:${AUTHD_PORT}/healthz" >/dev/null 2>&1; then
+      echo "Agent Auth Companion is ready"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Agent Auth Companion did not become ready" >&2
+  tail -n 100 "${HAPI_HOME}/authd.log" >&2 || true
+  return 1
 }
 
 start_hapi_hub() {
@@ -223,6 +259,7 @@ case "${AGENT_HARNESS}" in
     ;;
   hapi-only | code | agy | codex | opencode | all)
     install_hapi_and_selected_harnesses
+    start_auth_companion
     start_hapi_hub
     start_hapi_runner
     ;;
